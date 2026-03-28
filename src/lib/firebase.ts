@@ -8,8 +8,8 @@ const firebaseConfig = {
   projectId: "chess-app-c86a0",
   storageBucket: "chess-app-c86a0.firebasestorage.app",
   messagingSenderId: "710357321208",
-  appId: "1:710357321208:web:d6f2c66b2a29c6b7be420d",
-  measurementId: "G-33VWPR045Z"
+  appId: "1:710357321208:web:bd0e6627f29f9748be420d",
+  measurementId: "G-SQ02P1759C"
 };
 
 const app = initializeApp(firebaseConfig);
