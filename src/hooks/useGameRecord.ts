@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import type { GameRecord, UserStats } from '../types/user.types';
+import type { GameRecord } from '../types/user.types';
 
 export function useGameRecord() {
   const { user, profile, refreshProfile } = useAuth();
