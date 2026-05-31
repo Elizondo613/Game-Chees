@@ -4,6 +4,8 @@ import { Chess } from 'chess.js';
 import type { Square } from 'chess.js';
 import { useStockfish } from './useStockfish';
 import { useSounds } from './useSounds';
+import { useAbilities } from './useAbilities';
+import type { Civilization } from '../types/civilization.types';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -13,26 +15,41 @@ const DIFFICULTY_SKILL: Record<Difficulty, number> = {
   hard: 18,
 };
 
-export function useChessGame(difficulty: Difficulty = 'medium') {
+// Delay visual de la IA según dificultad (ms)
+const DIFFICULTY_DELAY: Record<Difficulty, number> = {
+  easy: 1200,    // lenta — parece que "piensa"
+  medium: 700,
+  hard: 200,     // rápida — da sensación de poder
+};
+
+export function useChessGame(
+  difficulty: Difficulty = 'medium',
+  civilization: Civilization,
+  initialTime: number = 600, // segundos
+) {
   const [game, setGame] = useState(new Chess());
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
   const [isAIThinking, setIsAIThinking] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
-
-  // Timer: segundos restantes por jugador
-  const [whiteTime, setWhiteTime] = useState(600); // 10 min
-  const [blackTime, setBlackTime] = useState(600);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [whiteTime, setWhiteTime] = useState(initialTime);
+  const [blackTime, setBlackTime] = useState(initialTime);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const gameRef = useRef(game);
   gameRef.current = game;
 
   const { playMove, playCapture, playCheck, playCheckmate } = useSounds();
+  const abilities = useAbilities(civilization);
+  const abilitiesRef = useRef(abilities);
+  abilitiesRef.current = abilities;
 
   const applyAIMove = useCallback((moveStr: string) => {
     const current = gameRef.current;
-    if (current.isGameOver() || current.turn() !== 'b') return;
+    if (!current || current.isGameOver() || current.turn() !== 'b') {
+      setIsAIThinking(false);
+      return;
+    }
     try {
       const gameCopy = new Chess(current.fen());
       const move = gameCopy.move({
@@ -43,27 +60,41 @@ export function useChessGame(difficulty: Difficulty = 'medium') {
       if (move.captured) playCapture();
       else playMove();
       if (gameCopy.isCheckmate()) playCheckmate();
-      else if (gameCopy.isCheck()) { playCheck(); setShakeKey(k => k + 1); }
+      else if (gameCopy.isCheck()) {
+        playCheck();
+        setShakeKey(k => k + 1);
+      }
       setGame(gameCopy);
-    } catch { /* movimiento inválido */ }
+      abilitiesRef.current.tickTurn();
+    } catch { 
+      setIsAIThinking(false);
+      setTimeout(() => {
+        setIsAIThinking(true);
+      }, 200);
+     }
     finally { setIsAIThinking(false); }
   }, [playMove, playCapture, playCheck, playCheckmate]);
 
   const { getBestMove } = useStockfish(applyAIMove, DIFFICULTY_SKILL[difficulty]);
 
-  // Timer logic
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (game.isGameOver()) return;
-    timerRef.current = setInterval(() => {
-      if (game.turn() === 'w') setWhiteTime(t => Math.max(0, t - 1));
-      else setBlackTime(t => Math.max(0, t - 1));
-    }, 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [game]);
-
   const handleSquareClick = useCallback((square: Square) => {
-    if (game.isGameOver() || game.turn() !== 'w' || isAIThinking) return;
+    if (!gameStarted || game.isGameOver() || isAIThinking) return;
+
+    // Habilidad pendiente — ejecutar
+    if (abilities.state.pendingAbility) {
+      abilities.executeAbility(game, 'w', (newFen) => {
+        const newGame = new Chess(newFen);
+        gameRef.current = newGame;
+        setGame(newGame);
+        setSelectedSquare(null);
+        setLegalMoves([]);
+        setIsAIThinking(false);
+        setTimeout(() => setIsAIThinking(true), 100);
+      });
+      return;
+    }
+
+    if (game.turn() !== 'w') return;
 
     if (selectedSquare && legalMoves.includes(square)) {
       const gameCopy = new Chess(game.fen());
@@ -71,7 +102,10 @@ export function useChessGame(difficulty: Difficulty = 'medium') {
       if (move.captured) playCapture();
       else playMove();
       if (gameCopy.isCheckmate()) playCheckmate();
-      else if (gameCopy.isCheck()) { playCheck(); setShakeKey(k => k + 1); }
+      else if (gameCopy.isCheck()) {
+        playCheck();
+        setShakeKey(k => k + 1);
+      }
       setGame(gameCopy);
       setSelectedSquare(null);
       setLegalMoves([]);
@@ -87,24 +121,58 @@ export function useChessGame(difficulty: Difficulty = 'medium') {
       setSelectedSquare(null);
       setLegalMoves([]);
     }
-  }, [game, selectedSquare, legalMoves, isAIThinking, playMove, playCapture, playCheck, playCheckmate]);
+  }, [game, selectedSquare, legalMoves, isAIThinking,
+      gameStarted, abilities, playMove, playCapture, playCheck, playCheckmate]);
 
+  // IA con delay según dificultad
   useEffect(() => {
-    if (game.turn() === 'b' && !game.isGameOver() && isAIThinking) {
-      const timer = setTimeout(() => getBestMove(game.fen()), 300);
+    if (game.turn() === 'b' && !game.isGameOver() && isAIThinking && gameStarted) {
+      const timer = setTimeout(() => {
+        getBestMove(gameRef.current.fen());
+      }, DIFFICULTY_DELAY[difficulty]);
       return () => clearTimeout(timer);
     }
-  }, [game, isAIThinking, getBestMove]);
+  }, [game, isAIThinking, getBestMove, difficulty, gameStarted]);
 
-  const reset = useCallback(() => {
+  // Timer — solo corre si el juego está iniciado
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (!gameStarted || game.isGameOver()) return;
+
+    timerRef.current = setInterval(() => {
+      if (gameRef.current.turn() === 'w') {
+        setWhiteTime(t => Math.max(0, t - 1));
+      } else {
+        setBlackTime(t => Math.max(0, t - 1));
+      }
+    }, 1000);
+
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [gameStarted, game]);
+
+  // Reinicia el timer al cambiar la configuración o al reiniciar el juego
+  useEffect(() => {
+  if (!gameStarted) {
+      setWhiteTime(initialTime);
+      setBlackTime(initialTime);
+    }
+  }, [initialTime, gameStarted]);
+
+  const startGame = useCallback(() => {
+    setGameStarted(true);
+  }, []);
+
+  const reset = useCallback((newTime?: number) => {
+    const timeToUse = newTime ?? initialTime;
     setGame(new Chess());
     setSelectedSquare(null);
     setLegalMoves([]);
     setIsAIThinking(false);
-    setWhiteTime(600);
-    setBlackTime(600);
     setShakeKey(0);
-  }, []);
+    setGameStarted(false);
+    setWhiteTime(timeToUse);
+    setBlackTime(timeToUse);
+  }, [initialTime]);
 
   return {
     game, selectedSquare, legalMoves, handleSquareClick,
@@ -115,6 +183,8 @@ export function useChessGame(difficulty: Difficulty = 'medium') {
     history: game.history(),
     isAIThinking, shakeKey,
     whiteTime, blackTime,
+    gameStarted, startGame,
+    abilities,
     reset,
   };
 }

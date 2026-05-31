@@ -26,26 +26,27 @@ export const medievalCivilization: Civilization = {
       effect: { type: 'movement_buff', value: 1 },
     },
   ],
+  // src/civilizations/medieval.ts — agrega activeAbility y passiveAbility a cada pieza
+
   pieces: [
     {
       role: 'K',
       name: 'Rey Dragón',
       replaces: 'K',
-      // Cuando tengas tu PNG:
-      // asset: { type:'png', white:'/pieces/medieval/king-white.png', black:'/pieces/medieval/king-black.png' }
       asset: { type:'svg', white: medievalSVGs.King(true), black: medievalSVGs.King(false) },
+      // El rey no tiene habilidad activa — demasiado poderoso
     },
     {
       role: 'Q',
       name: 'Maga',
       replaces: 'Q',
       asset: { type:'svg', white: medievalSVGs.Mage(true), black: medievalSVGs.Mage(false) },
-      specialAbility: {
+      activeAbility: {
         id: 'arcane-burst',
         name: 'Explosión Arcana',
-        description: 'Captura todas las piezas enemigas en radio 1',
+        description: 'Captura todas las piezas enemigas en radio 1 alrededor de esta pieza.',
         cooldownTurns: 6,
-        icon: '✨',
+        icon: '💥',
         effect: { type: 'aoe_capture', radius: 1 },
       },
     },
@@ -54,16 +55,24 @@ export const medievalCivilization: Civilization = {
       name: 'Catapulta',
       replaces: 'R',
       asset: { type:'svg', white: medievalSVGs.Catapult(true), black: medievalSVGs.Catapult(false) },
+      activeAbility: {
+        id: 'barrage',
+        name: 'Bombardeo',
+        description: 'Captura piezas enemigas en radio 2 en línea recta.',
+        cooldownTurns: 5,
+        icon: '💣',
+        effect: { type: 'aoe_capture', radius: 1 },
+      },
     },
     {
       role: 'B',
       name: 'Clérigo',
       replaces: 'B',
       asset: { type:'svg', white: medievalSVGs.Cleric(true), black: medievalSVGs.Cleric(false) },
-      specialAbility: {
+      activeAbility: {
         id: 'divine-shield',
         name: 'Escudo Divino',
-        description: 'Protege una pieza aliada de capturas por 2 turnos',
+        description: 'Protege esta pieza de capturas por 2 turnos.',
         cooldownTurns: 5,
         icon: '🛡️',
         effect: { type: 'shield', turns: 2 },
@@ -74,17 +83,28 @@ export const medievalCivilization: Civilization = {
       name: 'Caballero',
       replaces: 'N',
       asset: { type:'svg', white: medievalSVGs.Knight(true), black: medievalSVGs.Knight(false) },
+      activeAbility: {
+        id: 'the-wall',
+        name: 'El Muro',
+        description: 'Inmune a capturas durante 2 turnos.',
+        cooldownTurns: 6,
+        icon: '🗡️',
+        effect: { type: 'shield', turns: 2 },
+      },
     },
     {
       role: 'P',
       name: 'Arquero',
       replaces: 'P',
       asset: { type:'svg', white: medievalSVGs.Archer(true), black: medievalSVGs.Archer(false) },
+      activeAbility: {
+        id: 'volley',
+        name: 'Lluvia de Flechas',
+        description: 'Captura la pieza enemiga más cercana en su fila.',
+        cooldownTurns: 4,
+        icon: '🎯',
+        effect: { type: 'aoe_capture', radius: 1 },
+      },
     },
   ],
-  passiveAbility: {
-    name: 'Resurrección del Dragón',
-    description: 'Una vez por partida puedes revivir tu última pieza capturada',
-    effect: { type: 'revive', pieceRole: 'P' },
-  },
 };

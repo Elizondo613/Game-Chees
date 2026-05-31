@@ -1,4 +1,5 @@
 // src/hooks/useStockfish.ts
+import { Chess } from 'chess.js';
 import { useEffect, useRef, useCallback } from 'react';
 
 export function useStockfish(onBestMove: (move: string) => void, skillLevel = 8) {
@@ -29,6 +30,15 @@ export function useStockfish(onBestMove: (move: string) => void, skillLevel = 8)
   const getBestMove = useCallback((fen: string) => {
     const worker = workerRef.current;
     if (!worker) return;
+    
+    try {
+      const testGame = new Chess(fen);
+      if (testGame.isGameOver()) return;
+    } catch {
+      console.error('FEN inválido:', fen);
+      return;
+    }
+    
     worker.postMessage(`setoption name Skill Level value ${skillLevel}`);
     worker.postMessage(`position fen ${fen}`);
     worker.postMessage(`go depth ${depthRef.current}`);

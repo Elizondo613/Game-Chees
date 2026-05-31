@@ -23,7 +23,30 @@ export type AbilityEffect =
   | { type: 'aoe_capture'; radius: number }
   | { type: 'teleport'; pattern: number[][] }
   | { type: 'revive'; pieceRole: PieceRole }
+  | { type: 'movement_buff'; squares: number }
   | { type: 'zone_buff'; squares: string[] };
+
+export type PassiveEffect =
+  | { type: 'aura_movement'; radius: number; bonus: number }
+  | { type: 'cavalry_charge' }
+  | { type: 'resurrect_once'; pieceRole: PieceRole };
+
+export interface ActiveAbility {
+  id: string;
+  name: string;
+  description: string;
+  cooldownTurns: number;
+  icon: string;
+  effect: AbilityEffect;
+}
+
+export interface PassiveAbility {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  effect: PassiveEffect;
+}
 
 export interface CivilizationPiece {
   role: PieceRole;
@@ -32,7 +55,8 @@ export interface CivilizationPiece {
   // Sistema dual: SVG para default, PNG para assets custom
   asset: { type: 'svg'; white: string; black: string }
         | { type: 'png'; white: string; black: string };
-  specialAbility?: SpecialAbility;
+  activeAbility?: ActiveAbility;
+  passiveAbility?: PassiveAbility;
 }
 
 export interface BoardZone {
@@ -55,9 +79,4 @@ export interface Civilization {
   board: { light: string; dark: string; borderColor?: string };
   pieces: CivilizationPiece[];
   boardZones?: BoardZone[];
-  passiveAbility?: {
-    name: string;
-    description: string;
-    effect: AbilityEffect;
-  };
 }

@@ -8,6 +8,9 @@ import { useState, useEffect, useRef } from 'react';
 import { CIVILIZATIONS } from '../../civilizations';
 import type { Civilization } from '../../types/civilization.types';
 import { UserPanel } from '../Auth/UserPanel';
+import { AbilityPanel } from '../Abilities/AbilityPanel';
+import { ConfigPanel } from './ConfigPanel';
+import { GamePanel } from './GamePanel';
 
 const FILES = ['a','b','c','d','e','f','g','h'];
 const RANKS = ['8','7','6','5','4','3','2','1'];
@@ -28,29 +31,26 @@ function useBoardSize() {
   return size;
 }
 
-function formatTime(seconds: number) {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (seconds % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
-
 interface BoardProps {
   onLogout?: () => void;
 }
 
 export function Board({ onLogout }: BoardProps) {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [selectedTime, setSelectedTime] = useState(600);
+  const [civId, setCivId] = useState('classic');
+  const [configOpen, setConfigOpen] = useState(true); // panel colapsable
   const squareSize = useBoardSize();
   const moveLogRef = useRef<HTMLDivElement>(null);
-  const [civId, setCivId] = useState('classic');
-  const civilization: Civilization = CIVILIZATIONS[civId];
+  const civilization: Civilization = CIVILIZATIONS[civId] ?? CIVILIZATIONS['classic'];
 
   const {
     game, selectedSquare, legalMoves,
     handleSquareClick, isCheck, isCheckmate,
     isGameOver, turn, history, isAIThinking,
-    shakeKey, whiteTime, blackTime, reset,
-  } = useChessGame(difficulty);
+    shakeKey, whiteTime, blackTime,
+    gameStarted, startGame, abilities, reset,
+  } = useChessGame(difficulty, civilization, selectedTime);
 
   const lastHistoryMove = game.history({ verbose: true }).slice(-1)[0];
 
@@ -60,12 +60,25 @@ export function Board({ onLogout }: BoardProps) {
     }
   }, [history]);
 
+  // Colapsa el panel al iniciar
+  function handleStart() {
+    setConfigOpen(false);
+    startGame();
+  }
+
+  function handleReset() {
+    reset(selectedTime);
+    setConfigOpen(true);
+  }
+
   const boardPx = squareSize * 8;
   const isMobile = squareSize < 60;
+  const hasAbilities = civilization.id !== 'classic';
 
   const statusText = isCheckmate
     ? `¡Jaque mate! Ganan ${turn === 'w' ? 'negras' : 'blancas'}`
     : isGameOver ? 'Tablas'
+    : !gameStarted ? 'Configura y pulsa Jugar'
     : isAIThinking ? 'IA pensando...'
     : isCheck ? '¡Jaque!'
     : turn === 'w' ? 'Blancas — Tu turno' : 'Negras — Tu turno';
@@ -76,222 +89,159 @@ export function Board({ onLogout }: BoardProps) {
     <div style={{
       display: 'flex',
       flexDirection: isMobile ? 'column' : 'row',
-      gap: isMobile ? 16 : 24,
-      padding: isMobile ? 12 : 24,
-      alignItems: isMobile ? 'center' : 'flex-start',
+      gap: isMobile ? 12 : 16,
+      padding: isMobile ? 12 : 20,
+      alignItems: 'flex-start',
       justifyContent: 'center',
       minHeight: '100vh',
       boxSizing: 'border-box',
     }}>
 
+      {/* ── Panel izquierdo — Habilidades ── */}
+      {!isMobile && hasAbilities && gameStarted && (
+        <div style={{ width:200, display:'flex', flexDirection:'column', gap:10,
+          position:'sticky', top:20 }}>
+          <AbilityPanel
+            game={game}
+            civilization={civilization}
+            abilities={abilities}
+            selectedSquare={selectedSquare}
+            playerColor="w"
+            isPlayerTurn={turn === 'w' && !isAIThinking}
+          />
+        </div>
+      )}
+
       {/* ── Tablero ── */}
-      <div style={{ display:'flex', gap:4 }}>
-        {/* Rank coords */}
-        <div style={{ display:'flex', flexDirection:'column' }}>
-          {RANKS.map(r => (
-            <span key={r} style={{
-              height: squareSize, display:'flex', alignItems:'center',
-              fontSize: isMobile ? 9 : 11, color:'#999', width: isMobile ? 10 : 14,
-            }}>{r}</span>
-          ))}
-        </div>
-
-        <div>
-          {/* Grid con shake en jaque */}
-          <div
-            key={shakeKey}
-            style={{
-              display:'grid',
-              gridTemplateColumns: `repeat(8, ${squareSize}px)`,
-              border:'2px solid #888', borderRadius:4, overflow:'hidden',
-              width: boardPx, height: boardPx,
-              animation: shakeKey > 0 ? 'shake 0.4s ease' : 'none',
-            }}
-          >
-            {RANKS.map((rank, ri) =>
-              FILES.map((file, fi) => {
-                const sq = `${file}${rank}` as Square;
-                const piece = game.get(sq);
-                const isLight = (ri + fi) % 2 === 0;
-                const isSelected = selectedSquare === sq;
-                const isHint = legalMoves.includes(sq);
-                const isLastFrom = lastHistoryMove?.from === sq;
-                const isLastTo   = lastHistoryMove?.to === sq;
-                const isKingCheck = isCheck && piece?.type === 'k' && piece?.color === turn;
-
-                return (
-                  <SquareComponent
-                    key={sq}
-                    isLight={isLight}
-                    isSelected={isSelected}
-                    isHint={isHint}
-                    isLastMove={isLastFrom || isLastTo}
-                    isCheck={!!isKingCheck}
-                    hasPiece={!!piece}
-                    lightColor={civilization.board.light}
-                    darkColor={civilization.board.dark}
-                    size={squareSize}
-                    onClick={() => handleSquareClick(sq)}
-                  >
-                    {piece && (
-                      <Piece
-                        code={(piece.color === 'w' ? 'w' : 'b') + piece.type.toUpperCase()}
-                        size={squareSize}
-                        civilization={civilization}
-                      />
-                    )}
-                  </SquareComponent>
-                );
-              })
-            )}
-          </div>
-
-          {/* File coords */}
-          <div style={{ display:'flex', width: boardPx }}>
-            {FILES.map(f => (
-              <span key={f} style={{
-                width: squareSize, textAlign:'center',
-                fontSize: isMobile ? 9 : 11, color:'#999', marginTop:3,
-              }}>{f}</span>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-start' }}>
+        <div style={{ display:'flex', gap:4 }}>
+          {/* Rank coords */}
+          <div style={{ display:'flex', flexDirection:'column' }}>
+            {RANKS.map(r => (
+              <span key={r} style={{
+                height: squareSize, display:'flex', alignItems:'center',
+                fontSize: isMobile ? 9 : 11, color:'#999',
+                width: isMobile ? 10 : 14,
+              }}>{r}</span>
             ))}
           </div>
-        </div>
-      </div>
 
-      {/* ── Panel lateral ── */}
-      <UserPanel onLogout={onLogout} />
-      <div style={{
-        display:'flex', flexDirection:'column', gap:12,
-        width: isMobile ? boardPx + 14 : 200,
-      }}>
+          <div>
+            <div
+              key={shakeKey}
+              style={{
+                display:'grid',
+                gridTemplateColumns: `repeat(8, ${squareSize}px)`,
+                border:'2px solid #888', borderRadius:4, overflow:'hidden',
+                width: boardPx, height: boardPx,
+                animation: shakeKey > 0 ? 'shake 0.4s ease' : 'none',
+                opacity: gameStarted ? 1 : 0.6,
+                transition:'opacity 0.3s',
+              }}
+            >
+              {RANKS.map((rank, ri) =>
+                FILES.map((file, fi) => {
+                  const sq = `${file}${rank}` as Square;
+                  const piece = game.get(sq);
+                  const isLight = (ri + fi) % 2 === 0;
+                  const isSelected = selectedSquare === sq;
+                  const isHint = legalMoves.includes(sq);
+                  const isLastFrom = lastHistoryMove?.from === sq;
+                  const isLastTo   = lastHistoryMove?.to === sq;
+                  const isKingCheck = isCheck && piece?.type === 'k' && piece?.color === turn;
+                  const isAoePreview = abilities.state.pendingAbility?.aoePreview.includes(sq) ?? false;
+                  const isShielded = abilities.isShielded(sq);
 
-        {/* Estado */}
-        <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
-          borderRadius:10, padding:'12px 14px' }}>
-          <div style={{ fontSize:11, color:'#999', marginBottom:4, textTransform:'uppercase' }}>
-            Estado
-          </div>
-          <div style={{ fontSize:14, fontWeight:500, color: statusColor }}>
-            {isAIThinking
-              ? <span style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <span style={{ display:'inline-block', width:8, height:8,
-                    borderRadius:'50%', background:'#888',
-                    animation:'pulse 1s ease-in-out infinite' }} />
-                  IA pensando...
-                </span>
-              : statusText}
-          </div>
-        </div>
-
-        {/* Timer */}
-        <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
-          borderRadius:10, padding:'12px 14px' }}>
-          <div style={{ fontSize:11, color:'#999', marginBottom:8, textTransform:'uppercase' }}>
-            Tiempo
-          </div>
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {[
-              { label:'⬛ Negras', time: blackTime, active: turn === 'b' && !isGameOver },
-              { label:'⬜ Blancas', time: whiteTime, active: turn === 'w' && !isGameOver },
-            ].map(({ label, time, active }) => (
-              <div key={label} style={{
-                display:'flex', justifyContent:'space-between', alignItems:'center',
-                padding:'6px 10px', borderRadius:6,
-                background: active ? '#1a1a1a' : 'transparent',
-                color: active ? '#fff' : '#666', transition:'all 0.3s',
-              }}>
-                <span style={{ fontSize:12 }}>{label}</span>
-                <span style={{ fontSize:14, fontWeight:500, fontVariantNumeric:'tabular-nums' }}>
-                  {formatTime(time)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Dificultad */}
-        <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
-          borderRadius:10, padding:'12px 14px' }}>
-          <div style={{ fontSize:11, color:'#999', marginBottom:8, textTransform:'uppercase' }}>
-            Dificultad
-          </div>
-          <div style={{ display:'flex', gap:6 }}>
-            {(['easy','medium','hard'] as Difficulty[]).map(d => (
-              <button key={d} onClick={() => setDifficulty(d)} style={{
-                flex:1, padding:'6px 0', borderRadius:6,
-                border:'0.5px solid #ddd',
-                background: difficulty === d ? '#1a1a1a' : 'transparent',
-                color: difficulty === d ? '#fff' : '#666',
-                fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'inherit',
-                transition:'all 0.2s',
-              }}>
-                {d === 'easy' ? 'Fácil' : d === 'medium' ? 'Medio' : 'Difícil'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Civilización */}
-        <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
-          borderRadius:10, padding:'12px 14px' }}>
-          <div style={{ fontSize:11, color:'#999', marginBottom:8, textTransform:'uppercase' }}>
-            Civilización
-          </div>
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {Object.values(CIVILIZATIONS).map(civ => (
-              <button key={civ.id} onClick={() => setCivId(civ.id)} style={{
-                padding:'8px 10px', borderRadius:6, border:'0.5px solid #ddd',
-                background: civId === civ.id ? '#1a1a1a' : 'transparent',
-                color: civId === civ.id ? '#fff' : '#444',
-                fontSize:12, fontWeight:500, cursor:'pointer',
-                fontFamily:'inherit', textAlign:'left', transition:'all 0.2s',
-              }}>
-                <div>{civ.name} {civ.isPremium ? '👑' : ''}</div>
-                <div style={{ fontSize:10, opacity:0.6, marginTop:2 }}>{civ.description}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Historial */}
-        {!isMobile && (
-          <div ref={moveLogRef} style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
-            borderRadius:10, padding:'12px 14px', maxHeight:200, overflowY:'auto' }}>
-            <div style={{ fontSize:11, color:'#999', marginBottom:6, textTransform:'uppercase' }}>
-              Movimientos
+                  return (
+                    <SquareComponent
+                      key={sq}
+                      isLight={isLight}
+                      isSelected={isSelected}
+                      isHint={isHint}
+                      isLastMove={isLastFrom || isLastTo}
+                      isCheck={!!isKingCheck}
+                      hasPiece={!!piece}
+                      lightColor={civilization.board.light}
+                      darkColor={civilization.board.dark}
+                      size={squareSize}
+                      isAoePreview={isAoePreview}
+                      isShielded={isShielded}
+                      onClick={() => handleSquareClick(sq)}
+                    >
+                      {piece && (
+                        <Piece
+                          code={(piece.color === 'w' ? 'w' : 'b') + piece.type.toUpperCase()}
+                          size={squareSize}
+                          civilization={civilization}
+                        />
+                      )}
+                    </SquareComponent>
+                  );
+                })
+              )}
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'20px 1fr 1fr',
-              gap:'2px 6px', fontSize:12 }}>
-              {history.reduce((acc: string[][], mv, i) => {
-                if (i % 2 === 0) acc.push([mv]);
-                else acc[acc.length - 1].push(mv);
-                return acc;
-              }, []).map((pair, i) => (
-                <span key={i} style={{ display:'contents' }}>
-                  <span style={{ color:'#999' }}>{i+1}.</span>
-                  <span>{pair[0]}</span>
-                  <span>{pair[1] || ''}</span>
-                </span>
+
+            {/* File coords */}
+            <div style={{ display:'flex', width: boardPx }}>
+              {FILES.map(f => (
+                <span key={f} style={{
+                  width: squareSize, textAlign:'center',
+                  fontSize: isMobile ? 9 : 11, color:'#999', marginTop:3,
+                }}>{f}</span>
               ))}
             </div>
           </div>
-        )}
+        </div>
 
-        {isMobile && history.length > 0 && (
-          <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
-            borderRadius:10, padding:'8px 14px', fontSize:12, color:'#666',
-            textAlign:'center' }}>
-            {history.length} movimiento{history.length !== 1 ? 's' : ''}
+        {/* Habilidades en móvil — debajo del tablero */}
+        {isMobile && hasAbilities && gameStarted && (
+          <div style={{ marginTop:12, width: boardPx + 14 }}>
+            <AbilityPanel
+              game={game}
+              civilization={civilization}
+              abilities={abilities}
+              selectedSquare={selectedSquare}
+              playerColor="w"
+              isPlayerTurn={turn === 'w' && !isAIThinking}
+            />
           </div>
         )}
+      </div>
 
-        <button onClick={reset} style={{
-          background:'none', border:'0.5px solid #ccc', borderRadius:8,
-          padding:'8px 12px', fontSize:13, fontWeight:500, cursor:'pointer',
-          fontFamily:'inherit', transition:'background 0.12s',
-        }}>
-          ↺ Nueva partida
-        </button>
+      {/* ── Panel derecho ── */}
+      <div style={{
+        display:'flex', flexDirection:'column', gap:10,
+        width: isMobile ? boardPx + 14 : 200,
+      }}>
+        <UserPanel onLogout={onLogout} />
+        <ConfigPanel
+          difficulty={difficulty}
+          setDifficulty={setDifficulty}
+          selectedTime={selectedTime}
+          setSelectedTime={setSelectedTime}
+          civId={civId}
+          setCivId={setCivId}
+          civilizations={CIVILIZATIONS}
+          gameStarted={gameStarted}
+          configOpen={configOpen}
+          setConfigOpen={setConfigOpen}
+          onStart={handleStart}
+        />
+        {gameStarted && (
+          <GamePanel
+            statusText={statusText}
+            statusColor={statusColor}
+            isAIThinking={isAIThinking}
+            blackTime={blackTime}
+            whiteTime={whiteTime}
+            turn={turn}
+            gameStarted={gameStarted}
+            isGameOver={isGameOver}
+            history={history}
+            isMobile={isMobile}
+            onReset={handleReset}
+          />
+        )}
       </div>
 
       <style>{`
