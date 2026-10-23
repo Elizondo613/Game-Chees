@@ -1,5 +1,5 @@
 // src/hooks/useSounds.ts
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 function createAudioContext() {
   const AudioCtx = (window.AudioContext || 
@@ -70,5 +70,38 @@ export function useSounds() {
     });
   }, []);
 
-  return { playMove, playCapture, playCheck, playCheckmate };
+  // Arpegio brillante para habilidades ofensivas / mágicas
+  const playAbility = useCallback(() => {
+    const ctx = getCtx();
+    [0, 0.06, 0.12, 0.18].forEach((delay, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime([523, 659, 784, 1047][i], ctx.currentTime + delay);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.25);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.25);
+    });
+  }, []);
+
+  // Zumbido grave y sostenido para escudos
+  const playShield = useCallback(() => {
+    const ctx = getCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(196, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(392, ctx.currentTime + 0.35);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(); osc.stop(ctx.currentTime + 0.5);
+  }, []);
+
+  return useMemo(
+    () => ({ playMove, playCapture, playCheck, playCheckmate, playAbility, playShield }),
+    [playMove, playCapture, playCheck, playCheckmate, playAbility, playShield],
+  );
 }
