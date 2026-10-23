@@ -7,6 +7,8 @@ import { useSounds } from './useSounds';
 import { useAbilities } from './useAbilities';
 import type { AbilityUse } from './useAbilities';
 import { movesRespectingShields } from '../core/ability-engine';
+import { planAIAbility } from '../core/ai-abilities';
+import type { AIAbilityPlan } from '../core/ai-abilities';
 import type { Civilization } from '../types/civilization.types';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
@@ -42,6 +44,15 @@ const DIFFICULTY_DELAY: Record<Difficulty, number> = {
   hard: 250,
 };
 
+// Probabilidad de que la IA use una habilidad cuando encuentra una que le conviene
+const AI_ABILITY_CHANCE: Record<Difficulty, number> = {
+  easy: 0.3,
+  medium: 0.6,
+  hard: 0.9,
+};
+
+export type PromotionPiece = 'q' | 'r' | 'b' | 'n';
+
 // Si Stockfish no responde en este tiempo, la IA juega una jugada de respaldo
 const AI_WATCHDOG_MS = 10000;
 
@@ -62,6 +73,7 @@ export function useChessGame(
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [fx, setFx] = useState<BoardFx | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: Square; to: Square } | null>(null);
 
   // La partida termina sola: jaque mate / tablas según el tablero, o reloj en 0
   const result = useMemo<GameResult | null>(() => {
@@ -86,11 +98,13 @@ export function useChessGame(
   const sounds = useSounds();
   const abilities = useAbilities(civilization);
   const abilitiesRef = useRef(abilities);
+  const civRef = useRef(civilization);
   useLayoutEffect(() => {
     gameRef.current = game;
     resultRef.current = result;
     onGameEndRef.current = onGameEnd;
     abilitiesRef.current = abilities;
+    civRef.current = civilization;
   });
 
   const flash = useCallback((squares: string[], kind: BoardFx['kind']) => {
@@ -105,6 +119,39 @@ export function useChessGame(
     }
   }, [sounds]);
 
+  /** Aplica una habilidad ya resuelta (del jugador o de la IA) y pasa el turno */
+  const applyAbilityUse = useCallback((use: AbilityUse) => {
+    const { side, ability, outcome } = use;
+    const next = new Chess(outcome.fen);
+    const defensive = outcome.shielded.length > 0;
+    if (defensive) sounds.playShield();
+    else sounds.playAbility();
+    if (outcome.captured.length) setTimeout(() => sounds.playCapture(), 120);
+    feedbackForPosition(next);
+    flash(
+      defensive ? outcome.shielded
+        : outcome.captured.length ? outcome.captured
+        : [...outcome.converted, ...outcome.moved.map(([, to]) => to)],
+      defensive ? 'shield' : outcome.captured.length ? 'capture' : 'magic',
+    );
+    abilitiesRef.current.endTurn(side);
+    gameRef.current = next;
+    setGame(next);
+    setLastMove(outcome.moved.length ? { from: outcome.moved[0][0], to: outcome.moved[0][1] } : null);
+    setLog(l => [...l, { side, text: `${ability.icon} ${ability.name}`, kind: 'ability' }]);
+    setSelectedSquare(null);
+    setLegalMoves([]);
+    // Si jugó el humano, ahora le toca a la IA (y viceversa)
+    setIsAIThinking(side === 'w');
+  }, [sounds, feedbackForPosition, flash]);
+
+  /** La IA usa una habilidad planificada */
+  const applyAIAbility = useCallback((plan: AIAbilityPlan) => {
+    const use: AbilityUse = { side: 'b', from: plan.from, ability: plan.ability, outcome: plan.outcome };
+    abilitiesRef.current.commit(use);
+    applyAbilityUse(use);
+  }, [applyAbilityUse]);
+
   // ── Movimiento de la IA ─────────────────────────────────────────────────
 
   const commitAIMove = useCallback((move: Move, next: Chess) => {
@@ -112,7 +159,7 @@ export function useChessGame(
     else sounds.playMove();
     feedbackForPosition(next);
     abilitiesRef.current.onMove(move);
-    abilitiesRef.current.tick(); // una ronda completa: bajan cooldowns y escudos
+    abilitiesRef.current.endTurn('b');
     gameRef.current = next;
     setGame(next);
     setLastMove({ from: move.from, to: move.to });
@@ -124,7 +171,7 @@ export function useChessGame(
   const playFallbackMove = useCallback(() => {
     const current = gameRef.current;
     if (resultRef.current || current.turn() !== 'b' || current.isGameOver()) return;
-    const allowed = new Set(movesRespectingShields(current.fen(), abilitiesRef.current.shieldedSquares()));
+    const allowed = new Set(movesRespectingShields(current.fen(), abilitiesRef.current.protectedSquares));
     let options = current.moves({ verbose: true })
       .filter(m => allowed.size === 0 || allowed.has(m.from + m.to + (m.promotion ?? '')));
     const captures = options.filter(m => m.captured);
@@ -141,7 +188,7 @@ export function useChessGame(
     // Respuesta vieja (se reinició la partida, o ya se movió): se ignora
     if (resultRef.current || current.fen() !== requestedFen || current.turn() !== 'b') return;
 
-    const allowed = movesRespectingShields(current.fen(), abilitiesRef.current.shieldedSquares());
+    const allowed = movesRespectingShields(current.fen(), abilitiesRef.current.protectedSquares);
     if (allowed.length > 0 && !allowed.includes(moveStr)) {
       playFallbackMove();
       return;
@@ -167,9 +214,11 @@ export function useChessGame(
   // re-renderiza cada segundo y cancelaría la pausa de la IA)
   const getBestMoveRef = useRef(getBestMove);
   const fallbackRef = useRef(playFallbackMove);
+  const aiAbilityRef = useRef(applyAIAbility);
   useLayoutEffect(() => {
     getBestMoveRef.current = getBestMove;
     fallbackRef.current = playFallbackMove;
+    aiAbilityRef.current = applyAIAbility;
   });
 
   // Dispara la IA (con pausa según dificultad) y un vigilante por si no responde
@@ -177,8 +226,15 @@ export function useChessGame(
     if (!gameStarted || result || !isAIThinking || game.turn() !== 'b' || game.isGameOver()) return;
     const fen = game.fen();
     const think = setTimeout(() => {
+      // ¿Le conviene usar una habilidad? (más probable en difícil)
+      const ab = abilitiesRef.current;
+      const plan = planAIAbility(fen, civRef.current, 'b', ab.state.cooldowns.b, ab.protectedSquares);
+      if (plan && Math.random() < AI_ABILITY_CHANCE[difficulty]) {
+        aiAbilityRef.current(plan);
+        return;
+      }
       const legalCount = game.moves().length;
-      const allowed = movesRespectingShields(fen, abilitiesRef.current.shieldedSquares());
+      const allowed = movesRespectingShields(fen, abilitiesRef.current.protectedSquares);
       const restrict = allowed.length > 0 && allowed.length < legalCount ? allowed : undefined;
       getBestMoveRef.current(fen, restrict);
     }, DIFFICULTY_DELAY[difficulty]);
@@ -190,48 +246,45 @@ export function useChessGame(
 
   // ── Turno del jugador ───────────────────────────────────────────────────
 
-  const applyAbilityUse = useCallback((use: AbilityUse) => {
-    const { ability, outcome } = use;
-    const next = new Chess(outcome.fen);
-    const defensive = outcome.shielded.length > 0;
-    if (defensive) sounds.playShield();
-    else sounds.playAbility();
-    if (outcome.captured.length) setTimeout(() => sounds.playCapture(), 120);
+  const canPlayerAct = gameStarted && !result && !isAIThinking && game.turn() === 'w';
+
+  /** Jugada normal del jugador (promotion: pieza elegida al coronar) */
+  const playerMove = useCallback((from: Square, to: Square, promotion: PromotionPiece = 'q') => {
+    const next = new Chess(game.fen());
+    const move = next.move({ from, to, promotion });
+    if (move.captured) sounds.playCapture();
+    else sounds.playMove();
     feedbackForPosition(next);
-    flash(
-      defensive ? outcome.shielded
-        : outcome.captured.length ? outcome.captured
-        : [...outcome.converted, ...outcome.moved.map(([, to]) => to)],
-      defensive ? 'shield' : outcome.captured.length ? 'capture' : 'magic',
-    );
+    abilities.onMove(move);
+    abilities.endTurn('w');
     gameRef.current = next;
     setGame(next);
-    setLastMove(outcome.moved.length ? { from: outcome.moved[0][0], to: outcome.moved[0][1] } : null);
-    setLog(l => [...l, { side: 'w', text: `${ability.icon} ${ability.name}`, kind: 'ability' }]);
+    setLastMove({ from: move.from, to: move.to });
+    setLog(l => [...l, { side: 'w', text: move.san, kind: 'move' }]);
     setSelectedSquare(null);
     setLegalMoves([]);
+    setPendingPromotion(null);
     setIsAIThinking(true);
-  }, [sounds, feedbackForPosition, flash]);
-
-  const canPlayerAct = gameStarted && !result && !isAIThinking && game.turn() === 'w';
+  }, [game, sounds, feedbackForPosition, abilities]);
 
   /** Botón "Activar" del panel de habilidades */
   const activateAbility = useCallback((from: Square) => {
     if (!canPlayerAct) return;
-    const use = abilities.activate(game.fen(), from, 'w');
+    const use = abilities.activate(game.fen(), from);
     if (use) applyAbilityUse(use);
   }, [canPlayerAct, abilities, game, applyAbilityUse]);
 
   /** Botón "Confirmar" (habilidades de área) */
   const confirmAbility = useCallback(() => {
     if (!canPlayerAct) return;
-    const use = abilities.confirm(game.fen(), 'w');
+    const use = abilities.confirm(game.fen());
     if (use) applyAbilityUse(use);
   }, [canPlayerAct, abilities, game, applyAbilityUse]);
 
   const handleSquareClick = useCallback((square: Square) => {
     if (!canPlayerAct) return;
     abilities.clearError();
+    if (pendingPromotion) setPendingPromotion(null);
 
     // Habilidad pendiente: el clic elige objetivo / confirma, o la cancela
     const pending = abilities.state.pending;
@@ -240,7 +293,7 @@ export function useChessGame(
       const isAreaConfirm = pending.targets.length === 0
         && (square === pending.from || pending.preview.includes(square));
       if (isTarget || isAreaConfirm) {
-        const use = abilities.confirm(game.fen(), 'w', isTarget ? square : undefined);
+        const use = abilities.confirm(game.fen(), isTarget ? square : undefined);
         if (use) applyAbilityUse(use);
         return;
       }
@@ -248,32 +301,39 @@ export function useChessGame(
     }
 
     if (selectedSquare && legalMoves.includes(square)) {
-      const next = new Chess(game.fen());
-      const move = next.move({ from: selectedSquare, to: square, promotion: 'q' });
-      if (move.captured) sounds.playCapture();
-      else sounds.playMove();
-      feedbackForPosition(next);
-      abilities.onMove(move);
-      gameRef.current = next;
-      setGame(next);
-      setLastMove({ from: move.from, to: move.to });
-      setLog(l => [...l, { side: 'w', text: move.san, kind: 'move' }]);
-      setSelectedSquare(null);
-      setLegalMoves([]);
-      setIsAIThinking(true);
+      const isPromotion = game.moves({ square: selectedSquare, verbose: true })
+        .some(m => m.to === square && m.promotion);
+      if (isPromotion) {
+        setPendingPromotion({ from: selectedSquare, to: square });
+        return;
+      }
+      playerMove(selectedSquare, square);
       return;
     }
 
     const piece = game.get(square);
     if (piece && piece.color === 'w' && square !== selectedSquare) {
+      // No se puede capturar una pieza con escudo o en zona de inmunidad
+      const allowed = new Set(movesRespectingShields(game.fen(), abilities.protectedSquares));
+      const targets = game.moves({ square, verbose: true })
+        .filter(m => allowed.has(m.from + m.to + (m.promotion ?? '')))
+        .map(m => m.to as Square);
       setSelectedSquare(square);
-      setLegalMoves(game.moves({ square, verbose: true }).map(m => m.to as Square));
+      setLegalMoves([...new Set(targets)]);
     } else {
       setSelectedSquare(null);
       setLegalMoves([]);
     }
-  }, [canPlayerAct, abilities, game, selectedSquare, legalMoves, sounds,
-      feedbackForPosition, applyAbilityUse]);
+  }, [canPlayerAct, abilities, game, selectedSquare, legalMoves, applyAbilityUse, playerMove,
+      pendingPromotion]);
+
+  /** Elige la pieza de coronación pendiente */
+  const choosePromotion = useCallback((piece: PromotionPiece) => {
+    if (!pendingPromotion) return;
+    playerMove(pendingPromotion.from, pendingPromotion.to, piece);
+  }, [pendingPromotion, playerMove]);
+
+  const cancelPromotion = useCallback(() => setPendingPromotion(null), []);
 
   // ── Reloj ───────────────────────────────────────────────────────────────
 
@@ -324,6 +384,7 @@ export function useChessGame(
     setLastMove(null);
     setLog([]);
     setFx(null);
+    setPendingPromotion(null);
     savedRef.current = false;
     abilities.reset();
   }, [initialTime, cancelSearch, abilities]);
@@ -370,6 +431,9 @@ export function useChessGame(
     gameStarted, startGame,
     canPlayerAct,
     abilities,
+    pendingPromotion: result ? null : pendingPromotion,
+    choosePromotion,
+    cancelPromotion,
     activateAbility,
     confirmAbility,
     reset,

@@ -4,6 +4,10 @@ import { Chess } from 'chess.js';
 import {
   resolveAbility, getValidTargets, getPreviewSquares, movesRespectingShields,
 } from '../src/core/ability-engine';
+import { planAIAbility } from '../src/core/ai-abilities';
+import { medievalCivilization } from '../src/civilizations/medieval';
+import { japanCivilization } from '../src/civilizations/japan';
+import { egyptCivilization } from '../src/civilizations/egypt';
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -86,6 +90,51 @@ test('El turno pasa al rival y el FEN es válido tras cada efecto', () => {
     assert.equal(c.turn(), 'b');
     assert.ok(c.moves().length > 0);
   }
+});
+
+test('Las casillas protegidas no se pueden capturar con habilidades', () => {
+  const fen = '4k3/8/8/3pp3/3Q4/8/8/4K3 w - - 0 1';
+  const prev = getPreviewSquares(fen, 'd4', { type: 'aoe_capture', radius: 1 }, 'w', new Set(['d5']));
+  assert.deepEqual(prev, ['e5']);
+  const t = getValidTargets('4k3/8/8/8/r7/8/8/R6K w - - 0 1', 'a1',
+    { type: 'ranged_capture', range: 4, pattern: 'orthogonal' }, 'w', new Set(['a4']));
+  assert.deepEqual(t, []);
+});
+
+test('Si todas las jugadas capturan algo protegido, el escudo cede', () => {
+  // Rey negro en jaque por una dama protegida que solo puede ser capturada
+  const fen = '7k/6Q1/8/8/8/8/8/6K1 b - - 0 1';
+  assert.deepEqual(movesRespectingShields(fen, new Set(['g7'])), ['h8g7']);
+});
+
+test('IA: usa la Explosión Arcana cuando gana material', () => {
+  const fen = '4k3/8/8/8/3q4/3PP3/8/4K3 b - - 0 1';
+  const plan = planAIAbility(fen, medievalCivilization, 'b', {}, new Set());
+  assert.ok(plan);
+  assert.equal(plan!.ability.id, 'arcane-burst');
+});
+
+test('IA: no usa una habilidad en enfriamiento', () => {
+  const fen = '4k3/8/8/8/3q4/3PP3/8/4K3 b - - 0 1';
+  assert.equal(planAIAbility(fen, medievalCivilization, 'b', { 'arcane-burst': 3 }, new Set()), null);
+});
+
+test('IA: protege a una pieza atrapada (Esfinge encerrada y atacada)', () => {
+  const fen = 'rn2k3/p7/8/8/4B3/8/8/4K3 b - - 0 1';
+  const plan = planAIAbility(fen, egyptCivilization, 'b', {}, new Set());
+  assert.ok(plan);
+  assert.equal(plan!.ability.id, 'eternal-guardian');
+});
+
+test('IA: no gasta un escudo si la pieza puede simplemente huir', () => {
+  const fen = '4k3/8/8/3q4/8/8/8/3RK3 b - - 0 1';
+  assert.equal(planAIAbility(fen, japanCivilization, 'b', {}, new Set()), null);
+});
+
+test('IA: no gasta una habilidad si una jugada normal gana más', () => {
+  // La dama negra puede comerse gratis la dama blanca de d1
+  const fen = '4k3/8/8/8/3q4/3PP3/8/3QK3 b - - 0 1';
+  assert.equal(planAIAbility(fen, medievalCivilization, 'b', {}, new Set()), null);
 });
 
 console.log(`\n${passed} pruebas OK`);

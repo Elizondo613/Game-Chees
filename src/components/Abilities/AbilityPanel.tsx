@@ -78,7 +78,7 @@ export function AbilityPanel({
       {!pending && selectedSquare && selectedCivPiece?.activeAbility && (() => {
         const ability = selectedCivPiece.activeAbility;
         const cd = getCooldown(ability.id);
-        const shieldTurns = state.shields[selectedSquare];
+        const shieldTurns = state.shields[selectedSquare]?.turns;
         return (
           <div style={{ background: '#fff', border: '0.5px solid #ddd', borderRadius: 8, padding: '10px 12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>

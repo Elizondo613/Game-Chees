@@ -13,6 +13,9 @@ import { AbilityPanel } from '../Abilities/AbilityPanel';
 import { ConfigPanel } from './ConfigPanel';
 import { GamePanel } from './GamePanel';
 import { formatTime } from '../../utils/formatTime';
+import { zoneAt } from '../../core/zones';
+import { PromotionPicker } from './PromotionPicker';
+import { ZoneLegend } from './ZoneLegend';
 
 const FILES = ['a','b','c','d','e','f','g','h'];
 const RANKS = ['8','7','6','5','4','3','2','1'];
@@ -60,6 +63,7 @@ export function Board({ onLogout }: BoardProps) {
     shakeKey, whiteTime, blackTime,
     gameStarted, startGame, canPlayerAct, abilities,
     activateAbility, confirmAbility, reset,
+    pendingPromotion, choosePromotion, cancelPromotion,
   } = useChessGame(difficulty, civilization, selectedTime, handleGameEnd);
 
   // Colapsa el panel al iniciar
@@ -158,7 +162,7 @@ export function Board({ onLogout }: BoardProps) {
             ))}
           </div>
 
-          <div>
+          <div style={{ position: 'relative' }}>
             <div
               key={shakeKey}
               style={{
@@ -203,7 +207,9 @@ export function Board({ onLogout }: BoardProps) {
                       size={squareSize}
                       isAoePreview={isAoePreview}
                       isTarget={isTarget}
-                      shieldTurns={shields[sq] ?? 0}
+                      shieldTurns={shields[sq]?.turns ?? 0}
+                      shieldSide={shields[sq]?.side}
+                      zone={zoneAt(civilization, sq)}
                       fx={fx && fx.squares.includes(sq) ? fx : null}
                       onClick={() => handleSquareClick(sq)}
                     >
@@ -220,6 +226,16 @@ export function Board({ onLogout }: BoardProps) {
               )}
             </div>
 
+            {/* Elegir pieza al coronar */}
+            {pendingPromotion && (
+              <PromotionPicker
+                civilization={civilization}
+                size={squareSize}
+                onChoose={choosePromotion}
+                onCancel={cancelPromotion}
+              />
+            )}
+
             {/* File coords */}
             <div style={{ display:'flex', width: boardPx, marginLeft: frame }}>
               {FILES.map(f => (
@@ -229,6 +245,11 @@ export function Board({ onLogout }: BoardProps) {
                 }}>{f}</span>
               ))}
             </div>
+
+            {/* Leyenda de zonas especiales */}
+            {civilization.boardZones?.length ? (
+              <ZoneLegend zones={civilization.boardZones} width={boardPx + frame * 2} />
+            ) : null}
 
             {/* Resultado de la partida */}
             {result && (

@@ -43,16 +43,21 @@ export interface CivilizationPiece {
   activeAbility?: ActiveAbility;
 }
 
+/**
+ * Zona especial del tablero. Afecta igual a ambos bandos.
+ * - capture_immunity: las piezas sobre estas casillas no pueden ser capturadas.
+ * - cooldown_boost:   una habilidad usada desde aquí recarga `value` turnos antes.
+ */
 export interface BoardZone {
   id: string;
-  squares: string[];
   name: string;
-  color: string;            // color de tinte visual
-  opacity: number;
-  effect: {
-    type: 'movement_buff' | 'capture_immunity' | 'respawn';
-    value?: number;
-  };
+  description: string;
+  squares: string[];
+  color: string;            // tinte visual
+  icon: string;
+  effect:
+    | { type: 'capture_immunity' }
+    | { type: 'cooldown_boost'; value: number };
 }
 
 export interface BoardStyle {

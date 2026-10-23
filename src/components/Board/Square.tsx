@@ -22,6 +22,10 @@ interface SquareProps {
   isTarget: boolean;
   /** Turnos de escudo restantes (0 = sin escudo) */
   shieldTurns: number;
+  /** Bando dueño del escudo: dorado para ti, azul para la IA */
+  shieldSide?: 'w' | 'b';
+  /** Zona especial a la que pertenece la casilla */
+  zone?: { color: string; icon: string; name: string };
   /** Animación puntual sobre esta casilla */
   fx: BoardFx | null;
   onClick: () => void;
@@ -31,8 +35,9 @@ interface SquareProps {
 export function Square({
   square, isLight, isSelected, isHint, isLastMove, isCheck, hasPiece,
   lightColor, darkColor, lightTexture, darkTexture, size,
-  isAoePreview, isTarget, shieldTurns, fx, onClick, children,
+  isAoePreview, isTarget, shieldTurns, shieldSide = 'w', zone, fx, onClick, children,
 }: SquareProps) {
+  const glow = shieldSide === 'w' ? '250,204,21' : '56,189,248';
   // Capa de estado encima del color/textura base
   let overlay: string | null = null;
   if (isSelected) overlay = 'rgba(246,246,105,0.75)';
@@ -57,6 +62,17 @@ export function Square({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       cursor: 'pointer', boxSizing: 'border-box',
     }}>
+      {/* Zona especial: tinte + marco del color de la zona */}
+      {zone && (
+        <div title={zone.name} style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: `${zone.color}2e`, boxShadow: `inset 0 0 0 2px ${zone.color}aa`,
+        }}>
+          <span style={{ position: 'absolute', left: 2, bottom: 0, fontSize: Math.max(9, size * 0.2),
+            opacity: 0.75, lineHeight: 1.2 }}>{zone.icon}</span>
+        </div>
+      )}
+
       {overlay && <div style={{ position: 'absolute', inset: 0, background: overlay, pointerEvents: 'none' }} />}
 
       {/* Escudo: aura dorada que late */}
@@ -64,12 +80,13 @@ export function Square({
         <>
           <div style={{
             position: 'absolute', inset: 3, borderRadius: '50%', pointerEvents: 'none',
-            boxShadow: '0 0 0 2px rgba(250,204,21,0.9), 0 0 14px 4px rgba(250,204,21,0.65), inset 0 0 12px rgba(250,204,21,0.55)',
+            boxShadow: `0 0 0 2px rgba(${glow},0.9), 0 0 14px 4px rgba(${glow},0.65), inset 0 0 12px rgba(${glow},0.55)`,
             animation: 'shieldPulse 1.6s ease-in-out infinite',
           }} />
           <span style={{
             position: 'absolute', top: 2, right: 3, fontSize: Math.max(9, size * 0.17),
-            fontWeight: 700, color: '#713f12', background: '#fde047', borderRadius: 4,
+            fontWeight: 700, color: shieldSide === 'w' ? '#713f12' : '#0c4a6e',
+            background: shieldSide === 'w' ? '#fde047' : '#7dd3fc', borderRadius: 4,
             padding: '0 3px', lineHeight: 1.3, pointerEvents: 'none', zIndex: 2,
           }}>🛡{shieldTurns}</span>
         </>

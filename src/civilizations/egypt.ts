@@ -15,6 +15,17 @@ export const egyptCivilization: Civilization = {
     lightTexture: 'radial-gradient(rgba(120,80,20,0.10) 1px, transparent 1.2px) 0 0 / 7px 7px',
     darkTexture: 'radial-gradient(rgba(60,30,0,0.14) 1px, transparent 1.2px) 3px 3px / 7px 7px',
   },
+  boardZones: [
+    {
+      id: 'pyramids',
+      name: 'Pirámides',
+      description: 'Las piezas a la sombra de una pirámide no pueden ser capturadas.',
+      squares: ['c3', 'f3', 'c6', 'f6'],
+      color: '#f59e0b',
+      icon: '🔺',
+      effect: { type: 'capture_immunity' },
+    },
+  ],
   pieces: [
     {
       role: 'K',

@@ -56,6 +56,8 @@ function inPattern(from: string, to: string, range: number,
   return true;
 }
 
+const NONE: ReadonlySet<string> = new Set();
+
 const INVALID: AbilityResult = { ok: false, reason: 'Posición inválida' };
 
 const opposite = (s: Side): Side => (s === 'w' ? 'b' : 'w');
@@ -85,17 +87,19 @@ export function isInstantDefense(effect: AbilityEffect): boolean {
 
 // ── Candidatos geométricos (aún sin validar legalidad) ──────────────────────
 
-function candidateTargets(chess: Chess, from: string, effect: AbilityEffect, side: Side): string[] {
+function candidateTargets(
+  chess: Chess, from: string, effect: AbilityEffect, side: Side, prot: ReadonlySet<string>,
+): string[] {
   const enemy = opposite(side);
   return ALL_SQUARES.filter(sq => {
     const p = chess.get(sq as Square);
     switch (effect.type) {
       case 'ranged_capture':
-        return !!p && p.color === enemy && p.type !== 'k'
+        return !!p && p.color === enemy && p.type !== 'k' && !prot.has(sq)
           && (!effect.pawnsOnly || p.type === 'p')
           && inPattern(from, sq, effect.range, effect.pattern);
       case 'convert':
-        return !!p && p.color === enemy && p.type === 'p'
+        return !!p && p.color === enemy && p.type === 'p' && !prot.has(sq)
           && chebyshev(from, sq) <= effect.range;
       case 'swap':
         return !!p && p.color === side && p.type !== 'k' && sq !== from
@@ -163,12 +167,17 @@ function finalize(chess: Chess, original: string, side: Side, hadCapture: boolea
 
 // ── Resolución ──────────────────────────────────────────────────────────────
 
+/**
+ * @param prot casillas cuyas piezas no pueden ser capturadas ni convertidas
+ *             (escudos activos y zonas de inmunidad)
+ */
 export function resolveAbility(
   fen: string,
   from: string,
   effect: AbilityEffect,
   side: Side,
   target?: string,
+  prot: ReadonlySet<string> = NONE,
 ): AbilityResult {
   const chess = new Chess(fen);
   const self = chess.get(from as Square);
@@ -177,7 +186,7 @@ export function resolveAbility(
 
   if (needsTarget(effect)) {
     if (!target) return { ok: false, reason: 'Elige un objetivo' };
-    if (!candidateTargets(chess, from, effect, side).includes(target)) {
+    if (!candidateTargets(chess, from, effect, side, prot).includes(target)) {
       return { ok: false, reason: 'Objetivo fuera de alcance' };
     }
   }
@@ -194,7 +203,8 @@ export function resolveAbility(
       for (const sq of ALL_SQUARES) {
         if (sq === from || chebyshev(from, sq) > effect.radius) continue;
         const p = chess.get(sq as Square);
-        if (p && p.color === enemy && p.type !== 'k' && (!effect.pawnsOnly || p.type === 'p')) {
+        if (p && p.color === enemy && p.type !== 'k' && !prot.has(sq)
+          && (!effect.pawnsOnly || p.type === 'p')) {
           chess.remove(sq as Square);
           captured.push(sq);
         }
@@ -251,17 +261,21 @@ export function resolveAbility(
 }
 
 /** Casillas que el jugador puede elegir, ya filtradas por legalidad */
-export function getValidTargets(fen: string, from: string, effect: AbilityEffect, side: Side): string[] {
+export function getValidTargets(
+  fen: string, from: string, effect: AbilityEffect, side: Side, prot: ReadonlySet<string> = NONE,
+): string[] {
   if (!needsTarget(effect)) return [];
   const chess = new Chess(fen);
-  return candidateTargets(chess, from, effect, side)
-    .filter(t => resolveAbility(fen, from, effect, side, t).ok);
+  return candidateTargets(chess, from, effect, side, prot)
+    .filter(t => resolveAbility(fen, from, effect, side, t, prot).ok);
 }
 
 /** Casillas que se verían afectadas por un efecto sin objetivo (vista previa) */
-export function getPreviewSquares(fen: string, from: string, effect: AbilityEffect, side: Side): string[] {
+export function getPreviewSquares(
+  fen: string, from: string, effect: AbilityEffect, side: Side, prot: ReadonlySet<string> = NONE,
+): string[] {
   if (needsTarget(effect)) return [];
-  const r = resolveAbility(fen, from, effect, side);
+  const r = resolveAbility(fen, from, effect, side, undefined, prot);
   if (!r.ok) return [];
   return effect.type === 'aoe_capture' ? r.outcome.captured : r.outcome.shielded;
 }
@@ -271,10 +285,12 @@ export function getPreviewSquares(fen: string, from: string, effect: AbilityEffe
 /**
  * Movimientos legales (en notación UCI) que NO capturan una pieza protegida.
  * Se le pasan a Stockfish con `go searchmoves ...` para que respete los escudos.
+ * Si TODAS las jugadas legales capturan algo protegido, se devuelven todas
+ * (el escudo cede antes que dejar a alguien sin poder mover).
  */
-export function movesRespectingShields(fen: string, shielded: Set<string>): string[] {
+export function movesRespectingShields(fen: string, shielded: ReadonlySet<string>): string[] {
   const chess = new Chess(fen);
-  return chess.moves({ verbose: true })
+  const allowed = chess.moves({ verbose: true })
     .filter(m => {
       if (!m.captured) return true;
       // En passant: la pieza capturada no está en la casilla destino
@@ -282,4 +298,6 @@ export function movesRespectingShields(fen: string, shielded: Set<string>): stri
       return !shielded.has(capturedSq);
     })
     .map(m => m.from + m.to + (m.promotion ?? ''));
+  if (allowed.length > 0) return allowed;
+  return chess.moves({ verbose: true }).map(m => m.from + m.to + (m.promotion ?? ''));
 }

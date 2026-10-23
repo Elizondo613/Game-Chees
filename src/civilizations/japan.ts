@@ -16,6 +16,17 @@ export const japanCivilization: Civilization = {
     lightTexture: 'repeating-linear-gradient(90deg, rgba(90,70,30,0.07) 0 1px, transparent 1px 4px)',
     darkTexture: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.07) 0 1px, transparent 1px 6px)',
   },
+  boardZones: [
+    {
+      id: 'zen-garden',
+      name: 'Jardín Zen',
+      description: 'Una habilidad usada desde el jardín recarga 3 turnos antes.',
+      squares: ['d4', 'e4', 'd5', 'e5'],
+      color: '#e11d48',
+      icon: '⛩️',
+      effect: { type: 'cooldown_boost', value: 3 },
+    },
+  ],
   pieces: [
     {
       role: 'K',
