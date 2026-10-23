@@ -7,7 +7,7 @@ export const classicCivilization: Civilization = {
   name: 'Clásico',
   description: 'El ajedrez tradicional.',
   isPremium: false,
-  board: { light: '#F0D9B5', dark: '#B58863' },
+  board: { light: '#F0D9B5', dark: '#B58863', borderColor: '#7a5a3a' },
   pieces: [
     { role:'K', name:'Rey',   replaces:'K', asset:{ type:'svg', white: classicSVGs.K(true),  black: classicSVGs.K(false)  }},
     { role:'Q', name:'Reina', replaces:'Q', asset:{ type:'svg', white: classicSVGs.Q(true),  black: classicSVGs.Q(false)  }},

@@ -7,7 +7,15 @@ export const medievalCivilization: Civilization = {
   name: 'Reino Medieval',
   description: 'Dragones, magos y caballeros en un tablero encantado.',
   isPremium: false,   // gratis para probar
-  board: { light: '#E8D5A3', dark: '#6B4E2A', borderColor: '#3D2B0F' },
+  board: {
+    light: '#E8D5A3',
+    dark: '#6B4E2A',
+    borderColor: '#3D2B0F',
+    coordColor: '#8a6a3b',
+    // Vetas de madera muy sutiles
+    darkTexture: 'repeating-linear-gradient(100deg, rgba(0,0,0,0.07) 0 2px, transparent 2px 9px)',
+    lightTexture: 'repeating-linear-gradient(100deg, rgba(120,80,30,0.06) 0 1px, transparent 1px 8px)',
+  },
   boardZones: [
     {
       id: 'castle',
@@ -26,15 +34,13 @@ export const medievalCivilization: Civilization = {
       effect: { type: 'movement_buff', value: 1 },
     },
   ],
-  // src/civilizations/medieval.ts — agrega activeAbility y passiveAbility a cada pieza
-
   pieces: [
     {
       role: 'K',
       name: 'Rey Dragón',
       replaces: 'K',
       asset: { type:'svg', white: medievalSVGs.King(true), black: medievalSVGs.King(false) },
-      // El rey no tiene habilidad activa — demasiado poderoso
+      // El rey no tiene habilidad: sería demasiado fuerte
     },
     {
       role: 'Q',
@@ -44,8 +50,8 @@ export const medievalCivilization: Civilization = {
       activeAbility: {
         id: 'arcane-burst',
         name: 'Explosión Arcana',
-        description: 'Captura todas las piezas enemigas en radio 1 alrededor de esta pieza.',
-        cooldownTurns: 6,
+        description: 'Elimina a todas las piezas enemigas adyacentes (excepto el rey).',
+        cooldownTurns: 7,
         icon: '💥',
         effect: { type: 'aoe_capture', radius: 1 },
       },
@@ -58,10 +64,10 @@ export const medievalCivilization: Civilization = {
       activeAbility: {
         id: 'barrage',
         name: 'Bombardeo',
-        description: 'Captura piezas enemigas en radio 2 en línea recta.',
-        cooldownTurns: 5,
-        icon: '💣',
-        effect: { type: 'aoe_capture', radius: 1 },
+        description: 'Destruye una pieza enemiga en su fila o columna, hasta 4 casillas, por encima de lo que haya en medio.',
+        cooldownTurns: 6,
+        icon: '🪨',
+        effect: { type: 'ranged_capture', range: 4, pattern: 'orthogonal' },
       },
     },
     {
@@ -72,10 +78,10 @@ export const medievalCivilization: Civilization = {
       activeAbility: {
         id: 'divine-shield',
         name: 'Escudo Divino',
-        description: 'Protege esta pieza de capturas por 2 turnos.',
+        description: 'Elige una pieza aliada a 2 casillas o menos (puede ser él mismo): no puede ser capturada por 2 turnos.',
         cooldownTurns: 5,
         icon: '🛡️',
-        effect: { type: 'shield', turns: 2 },
+        effect: { type: 'shield', turns: 2, range: 2 },
       },
     },
     {
@@ -86,10 +92,10 @@ export const medievalCivilization: Civilization = {
       activeAbility: {
         id: 'the-wall',
         name: 'El Muro',
-        description: 'Inmune a capturas durante 2 turnos.',
-        cooldownTurns: 6,
+        description: 'El caballero levanta su escudo: no puede ser capturado por 2 turnos.',
+        cooldownTurns: 5,
         icon: '🗡️',
-        effect: { type: 'shield', turns: 2 },
+        effect: { type: 'shield', turns: 2, range: 0 },
       },
     },
     {
@@ -100,10 +106,10 @@ export const medievalCivilization: Civilization = {
       activeAbility: {
         id: 'volley',
         name: 'Lluvia de Flechas',
-        description: 'Captura la pieza enemiga más cercana en su fila.',
-        cooldownTurns: 4,
-        icon: '🎯',
-        effect: { type: 'aoe_capture', radius: 1 },
+        description: 'Elimina un peón enemigo a 2 casillas o menos. El enfriamiento es compartido por todos los arqueros.',
+        cooldownTurns: 6,
+        icon: '🏹',
+        effect: { type: 'ranged_capture', range: 2, pattern: 'any', pawnsOnly: true },
       },
     },
   ],

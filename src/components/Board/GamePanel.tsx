@@ -1,4 +1,6 @@
 import { useRef, useEffect } from 'react';
+import type { LogEntry } from '../../hooks/useChessGame';
+import { formatTime } from '../../utils/formatTime';
 
 interface GamePanelProps {
   statusText: string;
@@ -9,21 +11,16 @@ interface GamePanelProps {
   turn: string;
   gameStarted: boolean;
   isGameOver: boolean;
-  history: string[];
+  log: LogEntry[];
   isMobile: boolean;
   onReset: () => void;
 }
 
-function formatTime(seconds: number) {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (seconds % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
 
 export function GamePanel({
   statusText, statusColor, isAIThinking,
   blackTime, whiteTime, turn, gameStarted,
-  isGameOver, history, isMobile, onReset,
+  isGameOver, log, isMobile, onReset,
 }: GamePanelProps) {
   const moveLogRef = useRef<HTMLDivElement>(null);
 
@@ -31,12 +28,12 @@ export function GamePanel({
     if (moveLogRef.current) {
       moveLogRef.current.scrollTop = moveLogRef.current.scrollHeight;
     }
-  }, [history]);
+  }, [log]);
 
   return (
     <>
-      {/* Estado */}
-      <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
+      {/* Estado (en móvil va en la barra sobre el tablero) */}
+      {!isMobile && <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
         borderRadius:10, padding:'12px 14px' }}>
         <div style={{ fontSize:11, color:'#999', marginBottom:4,
           textTransform:'uppercase' }}>Estado</div>
@@ -50,10 +47,10 @@ export function GamePanel({
               </span>
             : statusText}
         </div>
-      </div>
+      </div>}
 
       {/* Timer */}
-      <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
+      {!isMobile && <div style={{ background:'#f5f5f5', border:'0.5px solid #ddd',
         borderRadius:10, padding:'12px 14px' }}>
         <div style={{ fontSize:11, color:'#999', marginBottom:8,
           textTransform:'uppercase' }}>Tiempo</div>
@@ -77,7 +74,7 @@ export function GamePanel({
             </div>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* Historial */}
       {!isMobile && (
@@ -85,17 +82,22 @@ export function GamePanel({
           borderRadius:10, padding:'12px 14px', maxHeight:160, overflowY:'auto' }}>
           <div style={{ fontSize:11, color:'#999', marginBottom:6,
             textTransform:'uppercase' }}>Movimientos</div>
-          <div style={{ display:'grid', gridTemplateColumns:'20px 1fr 1fr',
+          <div style={{ display:'grid', gridTemplateColumns:'22px minmax(0,1fr) minmax(0,1fr)',
             gap:'2px 6px', fontSize:12 }}>
-            {history.reduce((acc: string[][], mv, i) => {
-              if (i % 2 === 0) acc.push([mv]);
-              else acc[acc.length - 1].push(mv);
+            {log.reduce((acc: LogEntry[][], entry, i) => {
+              if (i % 2 === 0) acc.push([entry]);
+              else acc[acc.length - 1].push(entry);
               return acc;
             }, []).map((pair, i) => (
               <span key={i} style={{ display:'contents' }}>
                 <span style={{ color:'#999' }}>{i+1}.</span>
-                <span>{pair[0]}</span>
-                <span>{pair[1] || ''}</span>
+                {[0, 1].map(j => (
+                  <span key={j} style={{
+                    color: pair[j]?.kind === 'ability' ? '#7c3aed' : undefined,
+                    fontWeight: pair[j]?.kind === 'ability' ? 500 : undefined,
+                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                  }}>{pair[j]?.text ?? ''}</span>
+                ))}
               </span>
             ))}
           </div>
